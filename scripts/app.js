@@ -40,6 +40,7 @@
         }
         app.getSchedule(key, label);
         app.selectedTimetables.push({key: key, label: label});
+        app.saveSelectedTimetables();
         app.toggleAddDialog(false);
     });
 
@@ -87,6 +88,17 @@
         }
         card.querySelector('.card-last-updated').textContent = data.created;
 
+        var cardLastUpdatedElem = card.querySelector('.card-last-updated');
+        var cardLastUpdated = cardLastUpdatedElem.textContent;
+        if (cardLastUpdated) {
+          cardLastUpdated = new Date(cardLastUpdated);
+          // Bail if the card has more recent data then the data
+          if (dataLastUpdated.getTime() < cardLastUpdated.getTime()) {
+            return;
+          }
+        }
+        cardLastUpdatedElem.textContent = data.created;
+
         var scheduleUIs = card.querySelectorAll('.schedule');
         for(var i = 0; i<4; i++) {
             var schedule = schedules[i];
@@ -112,6 +124,21 @@
 
     app.getSchedule = function (key, label) {
         var url = 'https://api-ratp.pierre-grimaud.fr/v3/schedules/' + key;
+
+
+         if ('caches' in window) {          
+          caches.match(url).then(function(response) {
+            if (response) {
+              response.json().then(function updateFromCache(json) {
+                var results = json.query.results;
+                results.key = key;
+                results.label = label;
+                results.created = json.query.created;
+                app.updateTimetableCard(results);
+              });
+            }
+          });
+        }
 
         var request = new XMLHttpRequest();
         request.onreadystatechange = function () {
@@ -168,6 +195,11 @@
 
     };
 
+    app.saveSelectedTimetables = function() {
+        var selectedTimetables = JSON.stringify(app.selectedTimetables);
+        localStorage.selectedTimetables = selectedTimetables;
+    };
+
 
     /************************************************************************
      *
@@ -180,8 +212,24 @@
      *   SimpleDB (https://gist.github.com/inexorabletash/c8069c042b734519680c)
      ************************************************************************/
 
-    app.getSchedule('metros/1/bastille/A', 'Bastille, Direction La Défense');
-    app.selectedTimetables = [
-        {key: initialStationTimetable.key, label: initialStationTimetable.label}
-    ];
+    app.selectedTimetables = localStorage.selectedTimetables;
+    if (app.selectedTimetables){
+        app.selectedTimetables = JSON.parse(app.selectedTimetables);
+        app.selectedTimetables.forEach(function(timetable) {
+            app.getSchedule(timetable.key, timetable.label);
+        });
+    } else {
+        app.getSchedule('metros/1/bastille/A', 'Bastille, Direction La Défense');
+        app.selectedTimetables = [
+            {key: initialStationTimetable.key, label: initialStationTimetable.label}
+        ];
+        app.saveSelectedTimetables();
+    }
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker
+            .register('./service-worker.js')
+            .then(function() { console.log('Service Worker Registered'); });
+    }
+
 })();
